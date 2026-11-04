@@ -100,7 +100,6 @@
     st.setProperty("--blur", `${Math.round(s.bg_blur_amount * 0.8)}px`);
     st.setProperty("--text", s.text_color);
     st.setProperty("--font", FONT_STACKS[s.font] || FONT_STACKS.Inter);
-    st.setProperty("--title-size", `${s.title_size}px`);
     st.setProperty("--fade", `${s.fade_ms}ms`);
     applyAccent();
     card.dataset.align = s.card_align || "left";
@@ -111,8 +110,32 @@
     card.classList.toggle("no-progress", !s.show_progress);
     card.classList.toggle("no-times", !s.show_times);
     card.classList.toggle("show-label", !!s.show_player_label);
+    fitText();
     updateVisibility();
     scheduleMarquee();
+  }
+
+  // Text size comes from the slider, but never larger than the card can
+  // hold: title, artist, album, label and time labels all scale together,
+  // so big sizes (or album + label on) shrink just enough to fit.
+  const INFO_HEIGHT = 144; // .info height in canvas px (see overlay.css)
+  function contentHeight() {
+    let h = 0;
+    for (const el of card.querySelectorAll(".info .label, .info .line, .info .timeline")) {
+      if (el.offsetParent === null) continue; // display: none
+      const cs = getComputedStyle(el);
+      h += el.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
+    }
+    return h;
+  }
+  function fitText() {
+    let size = Number(effective().title_size) || 30;
+    for (let i = 0; i < 4; i++) {
+      card.style.setProperty("--title-size", `${size}px`);
+      const used = contentHeight();
+      if (used <= INFO_HEIGHT + 0.5) return;
+      size = Math.max(10, Math.floor((size * INFO_HEIGHT / used) * 10) / 10);
+    }
   }
 
   function applyAccent() {
@@ -183,11 +206,6 @@
     requestAnimationFrame(() => { marqueeQueued = false; Object.values(lines).forEach(setupMarquee); });
   }
 
-  function setText(line, text) {
-    line.dataset.text = text || "";
-    setupMarquee(line);
-  }
-
   function setupMarquee(line) {
     const text = line.dataset.text || "";
     const track = line.querySelector(".track");
@@ -223,10 +241,12 @@
     const s = effective();
     const idle = !np || np.status === "stopped" || !np.title;
     label.textContent = np ? np.player_name : "";
-    setText(lines.title, idle ? "Nothing playing" : np.title);
-    setText(lines.artist, idle ? (payload && payload.selected_name) || "" : np.artist);
-    setText(lines.album, idle ? "" : np.album);
+    lines.title.dataset.text = idle ? "Nothing playing" : np.title;
+    lines.artist.dataset.text = idle ? (payload && payload.selected_name) || "" : np.artist;
+    lines.album.dataset.text = idle ? "" : np.album;
     card.classList.toggle("no-duration", !np || !(np.duration_ms > 0) || idle);
+    fitText(); // which rows are shown can change with the track
+    Object.values(lines).forEach(setupMarquee);
     lastSecond = -1;
     tick();
   }
@@ -366,7 +386,10 @@
 
   function connect() {
     if (!window.EventSource) { startPolling(); return; }
-    const es = new EventSource("/api/events");
+    // OBS injects window.obsstudio into Browser Sources; telling the app lets
+    // the settings page show whether OBS is really reading the overlay.
+    const inObs = typeof window.obsstudio === "object" && !DEMO;
+    const es = new EventSource(inObs ? "/api/events?client=obs" : "/api/events");
     es.addEventListener("settings", (e) => { reachable(); onSettings(JSON.parse(e.data)); });
     es.addEventListener("now-playing", (e) => { reachable(); if (!DEMO) setNowPlaying(JSON.parse(e.data)); });
     es.onopen = () => { reachable(); stopPolling(); };
@@ -393,7 +416,7 @@
   });
 
   window.addEventListener("resize", () => { fit(); scheduleMarquee(); });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleMarquee);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { fitText(); scheduleMarquee(); });
 
   fit();
   connect();

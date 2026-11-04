@@ -202,3 +202,32 @@ async def test_sse_dedupes_unchanged_state(client, env):
     hub.publish = lambda *a, **k: published.append(orig(*a, **k)) or published[-1]
     backend.set(snap("Spotify.exe", title="Same"))  # identical state
     assert published and not any(published)
+
+
+async def test_obs_connection_is_reported(client, env):
+    backend, *_ = env
+    backend.set(snap("Spotify.exe"))
+    d = await (await client.get("/api/players")).json()
+    assert d["obs_connected"] == 0
+
+    dash = await client.get("/api/events")  # a normal browser (the dashboard)
+    assert (await _next_of(dash, "players"))["obs_connected"] == 0
+    obs_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/127.0.0.0 Safari/537.36 OBS/31.0.2"
+    obs = await client.get("/api/events", headers={"User-Agent": obs_ua})
+    assert (await _next_of(dash, "players"))["obs_connected"] == 1  # pushed to the dashboard
+    assert (await (await client.get("/api/players")).json())["obs_connected"] == 1
+
+    obs.close()                      # OBS source removed / OBS closed
+    backend.set(snap("Spotify.exe", title="next"))  # next write notices the gone client
+    for _ in range(5):
+        got = await _next_of(dash, "players")
+        if got["obs_connected"] == 0:
+            break
+    assert got["obs_connected"] == 0
+    dash.close()
+
+
+async def test_overlay_in_obs_identifies_itself(client):
+    resp = await client.get("/api/events?client=obs")
+    assert (await _next_of(resp, "players"))["obs_connected"] == 1
+    resp.close()

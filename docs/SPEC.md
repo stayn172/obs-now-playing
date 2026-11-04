@@ -112,7 +112,8 @@ Implementation notes (milestone 4):
 - Layout: card radius, art radius, scale (0.25–1), card align (left/center/right), art position, show/hide art
 - Style: background opacity (default 0.7), blur on/off + amount, accent (custom white by default /
   auto from art), text color,
-  font (bundled), title size
+  font (bundled), text size (title, artist, album, labels and time labels scale together and
+  shrink automatically to fit the card)
 - Content: album, progress bar, time labels, player label
 - Behavior: hide when paused, hide when nothing is playing, fade duration, hide during ads
 - Player: `selected_player` (default `spotify`)

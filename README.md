@@ -80,9 +80,13 @@ Apps packaged with PyInstaller are sometimes flagged by heuristics. The release 
 this repository by GitHub Actions; you can check the workflow log, or run it from source (below).
 
 **The overlay in OBS is empty.**
-That's on purpose when the app you chose isn't running. The settings page shows the reason at the
-top right ("Spotify is not running"). Start the app or pick another source. Also check *Hide when
-paused* and *Hide during ads*.
+- If OBS was opened *before* the app, the Browser Source got stuck on an error page, and OBS's
+  "Refresh cache of current page" doesn't revive it. Remove the Browser Source and add it again,
+  or use the OBS script, which does this automatically after starting the app. The settings page
+  shows "OBS is connected" once it works.
+- It's also on purpose when the app you chose isn't running: the settings page shows the reason at
+  the top right ("Spotify is not running"). Start the app or pick another source.
+- Also check *Hide when paused* and *Hide during ads*.
 
 **My player isn't in the Source list.**
 Start playing something in it first. On Windows the player must support the system media controls

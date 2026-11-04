@@ -97,6 +97,11 @@ main { max-width: 1240px; margin: 0 auto; padding: 24px; }
 }
 .dims { color: var(--muted); font-size: 13px; }
 .dims b { color: var(--text); }
+.obs-conn { display: flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--muted); }
+.obs-conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; transform: translateY(-1px); }
+.obs-conn.on { color: var(--text); }
+.obs-conn.on .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(60, 207, 142, 0.18); }
+.obs-conn.off .dot { background: var(--warn); }
 .steps { margin: 0; padding-left: 20px; color: var(--muted); display: grid; gap: 6px; }
 .steps b { color: var(--text); }
 kbd {

@@ -164,15 +164,16 @@ html, body {
 }
 #card.no-album .album { display: none; }
 
-.timeline { margin-top: 14px; }
+/* Time labels follow the text-size setting (13px at the default 30px). */
+.timeline { margin-top: calc(var(--title-size) * 0.47); }
 .times {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: calc(var(--title-size) * 0.43);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   opacity: 0.66;
-  margin-bottom: 7px;
+  margin-bottom: calc(var(--title-size) * 0.23);
 }
 .bar {
   position: relative;

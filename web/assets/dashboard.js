@@ -47,7 +47,7 @@
     card_radius: { label: "Card corners", unit: "px" },
     art_radius: { label: "Cover corners", unit: "px" },
     font: { label: "Font" },
-    title_size: { label: "Title size", unit: "px" },
+    title_size: { label: "Text size", unit: "px" },
     text_color: { label: "Text color" },
     accent_mode: { label: "Progress bar color", labels: { custom: "Custom", auto: "From cover" } },
     accent_color: { label: "Custom color" },
@@ -411,6 +411,20 @@
     players = p;
     renderPlayers();
     renderStatus();
+    renderObsConnection(p.obs_connected);
+  }
+
+  // OBS identifies itself in its user agent, so the app knows whether a
+  // Browser Source is actually reading the overlay.
+  function renderObsConnection(count) {
+    const box = $("#obs-conn");
+    if (typeof count !== "number") { box.hidden = true; return; }
+    box.hidden = false;
+    box.className = `obs-conn ${count > 0 ? "on" : "off"}`;
+    box.replaceChildren(el("span", { class: "dot" }),
+      el("span", {}, count > 0
+        ? "OBS is connected and showing the overlay."
+        : "OBS isn't connected. If OBS was open before this app, remove the Browser Source and add it again. The OBS script (see System below) does this automatically."));
   }
 
   let pollTimer = 0;

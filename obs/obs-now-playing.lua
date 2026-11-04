@@ -108,9 +108,67 @@ local function launch(flag)
   return ok
 end
 
+-- ------------------------------------------------- refreshing the overlay
+
+-- OBS often loads Browser Sources before the app is up (even when this
+-- script starts it). Such a source is stuck on an error page, and OBS's
+-- "Refresh cache of current page" doesn't revive it. Changing the URL makes
+-- OBS rebuild the source's browser, the same as removing and re-adding it,
+-- so the URL is pointed at about:blank and straight back.
+
+local function is_overlay_url(url)
+  url = (url or ""):lower()
+  for _, host in ipairs({ "127%.0%.0%.1", "localhost", "%[::1%]" }) do
+    if url:match("^https?://" .. host .. ":%d+/overlay") then return true end
+  end
+  return false
+end
+
+local function reload_overlay_sources()
+  local count = 0
+  local sources = obs.obs_enum_sources()
+  if sources then
+    for _, src in ipairs(sources) do
+      if obs.obs_source_get_unversioned_id(src) == "browser_source" then
+        local data = obs.obs_source_get_settings(src)
+        local url = obs.obs_data_get_string(data, "url")
+        if is_overlay_url(url) then
+          obs.obs_data_set_string(data, "url", "about:blank")
+          obs.obs_source_update(src, data)
+          obs.obs_data_set_string(data, "url", url)  -- restore: settings end unchanged
+          obs.obs_source_update(src, data)
+          count = count + 1
+        end
+        obs.obs_data_release(data)
+      end
+    end
+    obs.source_list_release(sources)
+  end
+  log("reloaded " .. count .. " overlay source(s)")
+  return count
+end
+
+local pending_timers = {}
+
+local function refresh_later(ms)
+  local fn
+  fn = function()
+    obs.timer_remove(fn)
+    pending_timers[fn] = nil
+    reload_overlay_sources()
+  end
+  pending_timers[fn] = true
+  obs.timer_add(fn, ms)
+end
+
 local function maybe_start()
   if launched_this_session or not cfg.start_with_obs then return end
-  if launch("--from-obs") then launched_this_session = true end
+  if launch("--from-obs") then
+    launched_this_session = true
+    -- The app answers within about a second; slow PCs get a second try.
+    refresh_later(3000)
+    refresh_later(10000)
+  end
 end
 
 -- --------------------------------------------------------- OBS callbacks
@@ -118,6 +176,7 @@ end
 function script_description()
   return [[<b>Now Playing Overlay</b><br>
 Starts the app together with OBS and, if OBS started it, closes it again when OBS exits.<br>
+After starting the app it reloads the overlay Browser Source, so it works even though OBS loads it first.<br>
 An app you started yourself (or that starts with Windows) is left running.]]
 end
 
@@ -130,6 +189,10 @@ function script_properties()
   obs.obs_properties_add_text(props, "extra_args", "Extra arguments (optional)", obs.OBS_TEXT_DEFAULT)
   obs.obs_properties_add_button(props, "open_settings", "Open overlay settings", function()
     launch("")  -- a plain launch opens the dashboard (or starts the app if needed)
+    return false
+  end)
+  obs.obs_properties_add_button(props, "refresh_overlay", "Refresh overlay in OBS", function()
+    reload_overlay_sources()
     return false
   end)
   return props
@@ -160,6 +223,8 @@ function script_update(settings)
 end
 
 function script_unload()
+  for fn in pairs(pending_timers) do obs.timer_remove(fn) end
+  pending_timers = {}
   if launched_this_session and cfg.close_with_obs then
     launch("--quit-from-obs")
   end

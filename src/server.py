@@ -65,7 +65,7 @@ def now_playing_payload(manager: PlayerManager) -> dict:
     }
 
 
-def players_payload(manager: PlayerManager) -> dict:
+def players_payload(manager: PlayerManager, obs_clients: int = 0) -> dict:
     b = manager.backend
     return {
         "selected_player": manager.selected_player,
@@ -73,6 +73,9 @@ def players_payload(manager: PlayerManager) -> dict:
         "running": manager.active() is not None,
         "players": [p.to_dict() for p in manager.players()],
         "backend": {"name": b.name, "status": b.status, "error": b.error},
+        # OBS Browser Sources currently connected (OBS puts "OBS/<version>"
+        # in its user agent). 0 usually means the source needs a refresh.
+        "obs_connected": obs_clients,
     }
 
 
@@ -106,9 +109,10 @@ def _np_signature(payload: dict) -> Any:
 # ------------------------------------------------------------------------ SSE
 
 class _Client:
-    __slots__ = ("pending", "wake")
+    __slots__ = ("pending", "wake", "is_obs")
 
-    def __init__(self) -> None:
+    def __init__(self, is_obs: bool = False) -> None:
+        self.is_obs = is_obs
         self.pending: dict[str, str] = {}
         self.wake = asyncio.Event()
 
@@ -133,6 +137,9 @@ class EventHub:
             c.wake.set()
         return True
 
+    def obs_count(self) -> int:
+        return sum(1 for c in self.clients if c.is_obs)
+
     def close(self) -> None:
         self.closing = True
         for c in self.clients:
@@ -141,6 +148,12 @@ class EventHub:
 
 async def _sse_write(resp: web.StreamResponse, event: str, data: str) -> None:
     await resp.write(f"event: {event}\ndata: {data}\n\n".encode())
+
+
+def is_obs_browser(request: web.Request) -> bool:
+    """The overlay says so when OBS's window.obsstudio exists; the user agent
+    ("... OBS/<version>") is a fallback."""
+    return request.query.get("client") == "obs" or "OBS/" in request.headers.get("User-Agent", "")
 
 
 async def handle_events(request: web.Request) -> web.StreamResponse:
@@ -152,13 +165,15 @@ async def handle_events(request: web.Request) -> web.StreamResponse:
         "X-Accel-Buffering": "no",
     })
     await resp.prepare(request)
-    client = _Client()
+    client = _Client(is_obs=is_obs_browser(request))
     hub.clients.add(client)
+    if client.is_obs:
+        hub.publish("players", players_payload(manager, hub.obs_count()))
     try:
         await resp.write(b"retry: 2000\n\n")
         # Fresh full state on connect.
         await _sse_write(resp, "settings", json.dumps(settings_payload(request.app[K_SETTINGS])))
-        await _sse_write(resp, "players", json.dumps(players_payload(manager)))
+        await _sse_write(resp, "players", json.dumps(players_payload(manager, hub.obs_count())))
         await _sse_write(resp, "now-playing", json.dumps(now_playing_payload(manager)))
         await _sse_write(resp, "notices", json.dumps(notices_payload(request.app[K_NOTICES])))
         while not hub.closing:
@@ -175,6 +190,8 @@ async def handle_events(request: web.Request) -> web.StreamResponse:
         pass
     finally:
         hub.clients.discard(client)
+        if client.is_obs and not hub.closing:
+            hub.publish("players", players_payload(manager, hub.obs_count()))
     return resp
 
 
@@ -201,7 +218,8 @@ async def handle_now_playing(request: web.Request) -> web.Response:
 
 
 async def handle_players(request: web.Request) -> web.Response:
-    return web.json_response(players_payload(request.app[K_MANAGER]), headers={"Cache-Control": "no-store"})
+    return web.json_response(players_payload(request.app[K_MANAGER], request.app[K_HUB].obs_count()),
+                             headers={"Cache-Control": "no-store"})
 
 
 async def handle_art(request: web.Request) -> web.Response:
@@ -337,7 +355,7 @@ def create_app(manager: PlayerManager, store: SettingsStore, notices: Notices | 
     def on_manager_change() -> None:
         np = now_playing_payload(manager)
         hub.publish("now-playing", np, _np_signature(np))
-        hub.publish("players", players_payload(manager))
+        hub.publish("players", players_payload(manager, hub.obs_count()))
 
     def on_settings_change(settings: dict, changed: set) -> None:
         if "selected_player" in changed:

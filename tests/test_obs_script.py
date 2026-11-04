@@ -26,8 +26,21 @@ obslua = {
   obs_data_set_default_bool = function(s, k, v) if s[k] == nil then s[k] = v end end,
   obs_data_get_string = function(s, k) return s[k] or "" end,
   obs_data_get_bool = function(s, k) return s[k] == true end,
+  obs_data_release = function(d) end,
+  -- sources / buttons / timers
+  obs_enum_sources = function() return SOURCES end,
+  source_list_release = function(list) end,
+  obs_source_get_unversioned_id = function(src) return src.kind end,
+  obs_source_get_settings = function(src) return src.settings end,
+  obs_data_set_string = function(d, k, v) d[k] = v end,
+  obs_source_update = function(src, d) table.insert(UPDATES, src.name .. "=" .. d.url) end,
+  timer_add = function(fn, ms) TIMERS[fn] = ms end,
+  timer_remove = function(fn) TIMERS[fn] = nil end,
 }
 LOGS = {}
+SOURCES = {}
+UPDATES = {}
+TIMERS = {}
 """
 
 
@@ -59,7 +72,7 @@ def test_properties_and_defaults(tmp_path):
     assert s["exe"] == str(exe)  # found next to the script
     assert s["start_with_obs"] is True and s["close_with_obs"] is True
     props = list(rt.globals().script_properties().values())
-    assert props == ["exe", "start_with_obs", "close_with_obs", "extra_args", "open_settings"]
+    assert props == ["exe", "start_with_obs", "close_with_obs", "extra_args", "open_settings", "refresh_overlay"]
     assert "Now Playing" in rt.globals().script_description()
 
 
@@ -105,3 +118,56 @@ def test_start_disabled_means_no_launch_and_no_quit(tmp_path):
     rt.globals().script_load(s)
     rt.globals().script_unload()
     assert not any(m.startswith("ran:") for m in logs(rt))
+
+
+def add_sources(rt):
+    rt.execute("""
+      SOURCES = {
+        { name = "Now Playing", kind = "browser_source", settings = { url = "http://127.0.0.1:8765/overlay" } },
+        { name = "Other port",  kind = "browser_source", settings = { url = "http://localhost:8766/overlay" } },
+        { name = "Alerts",      kind = "browser_source", settings = { url = "https://dashboard.twitch.tv/widgets/alertbox" } },
+        { name = "Preview",     kind = "browser_source", settings = { url = "http://127.0.0.1:8765/" } },
+        { name = "Camera",      kind = "dshow_input",    settings = {} },
+      }
+    """)
+
+
+def test_refresh_only_touches_overlay_sources(tmp_path):
+    rt = load(str(tmp_path))
+    add_sources(rt)
+    assert rt.globals().reload_overlay_sources is None  # local, reached via the button
+    s = settings(rt)
+    g = rt.globals()
+    props = g.script_properties()
+    # call the "Refresh overlay in OBS" button through the script's own closure
+    rt.execute("""
+      local props = {}
+      obslua.obs_properties_add_button = function(p, name, text, cb) props[name] = cb end
+      script_properties()
+      props.refresh_overlay()
+    """)
+    assert list(g.UPDATES.values()) == [
+        "Now Playing=about:blank", "Now Playing=http://127.0.0.1:8765/overlay",
+        "Other port=about:blank", "Other port=http://localhost:8766/overlay",
+    ]
+    # settings end exactly as they were (fixed URL, no query added)
+    assert rt.eval("SOURCES[1].settings.url") == "http://127.0.0.1:8765/overlay"
+    assert rt.eval("SOURCES[3].settings.url") == "https://dashboard.twitch.tv/widgets/alertbox"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="launches via ShellExecuteW")
+def test_start_schedules_refreshes_and_unload_clears_them(tmp_path):
+    marker = tmp_path / "argv.txt"
+    pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    code = f"import sys; open(r'{marker}', 'a').write(' '.join(sys.argv[1:]) + chr(10))"
+    rt = load(str(tmp_path))
+    add_sources(rt)
+    g = rt.globals()
+    g.script_load(settings(rt, exe=pyw, extra_args=f'-c "{code}"'))
+    assert sorted(g.TIMERS.values()) == [3000, 10000]
+    first = next(fn for fn, ms in g.TIMERS.items() if ms == 3000)
+    first()  # OBS fires the timer
+    assert len(list(g.UPDATES.values())) == 4  # two overlay sources rebuilt
+    assert list(g.TIMERS.values()) == [10000]  # one-shot: removed itself
+    g.script_unload()
+    assert len(list(g.TIMERS.values())) == 0  # pending refresh cancelled
