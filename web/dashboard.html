@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Now Playing Overlay</title>
+<link rel="icon" href="/assets/placeholder.svg">
+<link rel="stylesheet" href="/assets/fonts.css">
+<link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    <span>Now Playing Overlay</span>
+  </div>
+  <div id="status" class="status" role="status" aria-live="polite">
+    <span class="dot"></span><span class="status-text">Connecting…</span>
+  </div>
+</header>
+
+<main>
+  <section class="hero card">
+    <div class="hero-main">
+      <button id="copy" class="btn-primary" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span class="copy-label">Copy Browser Source URL</span>
+      </button>
+      <div class="url-block">
+        <code id="url" class="url"></code>
+        <div class="dims">Width <b id="w">640</b> · Height <b id="h">200</b></div>
+      </div>
+    </div>
+    <ol class="steps">
+      <li><b>In OBS</b>, click <kbd>+</kbd> under Sources and choose <b>Browser</b>.</li>
+      <li><b>Paste</b> the URL and set the width and height shown here.</li>
+      <li><b>Done.</b> Change the look here any time. OBS updates live.</li>
+    </ol>
+  </section>
+
+  <div id="notices" aria-live="polite"></div>
+  <div id="banner" class="banner" hidden></div>
+
+  <div class="layout">
+    <div class="col-left">
+      <section class="card preview-card">
+        <div class="card-head">
+          <h2>Preview</h2>
+          <label class="switch small">
+            <input type="checkbox" id="demo">
+            <span class="track"><span class="thumb"></span></span>
+            <span>Demo track</span>
+          </label>
+        </div>
+        <div class="preview">
+          <iframe id="preview" title="Overlay preview" src="about:blank"></iframe>
+          <div id="preview-empty" class="preview-empty" hidden></div>
+        </div>
+        <p class="hint">Exactly what OBS shows. The checkerboard stands for your scene.</p>
+      </section>
+    </div>
+
+    <div class="col-right">
+      <section class="card">
+        <div class="card-head">
+          <h2>Source</h2>
+        </div>
+        <p class="hint top">Pick the app to read. Only this app is ever shown, like choosing a window in OBS.</p>
+        <div id="players" class="players" role="radiogroup" aria-label="Media source"></div>
+      </section>
+
+      <div id="settings"></div>
+
+      <section class="card">
+        <div class="card-head"><h2>Reset</h2></div>
+        <p class="hint top">Restore the default look and behavior. Your source and system settings are kept.</p>
+        <button id="reset" class="btn-secondary" type="button">Reset to defaults</button>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="foot">Now Playing Overlay <span id="version"></span> · runs locally, nothing leaves this computer · not affiliated with OBS, Spotify, Qobuz or Apple</footer>
+
+<div id="toast" class="toast" role="alert" hidden></div>
+<script src="/assets/dashboard.js"></script>
+</body>
+</html>

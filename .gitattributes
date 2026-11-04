@@ -1,0 +1,10 @@
+* text=auto
+# Executed on Linux: must keep LF line endings even when committed from Windows.
+build/appimage/AppRun text eol=lf
+*.sh text eol=lf
+*.desktop text eol=lf
+*.lua text eol=lf
+# Binary assets
+*.png binary
+*.ico binary
+*.woff2 binary

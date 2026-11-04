@@ -1,0 +1,161 @@
+name: Release
+
+# Push a tag like v0.1.0 (must match src/version.py) to build both platforms
+# and publish a GitHub Release. "Run workflow" (manual) builds the same
+# artifacts without publishing, for a dry run.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  check-version:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: Read version (and check it matches the tag)
+        shell: bash
+        run: |
+          version=$(python3 -c "import re; print(re.search(r'__version__ = \"(.+)\"', open('src/version.py').read()).group(1))")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match src/version.py ($version)"
+            exit 1
+          fi
+
+  build-windows:
+    needs: check-version
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Build
+        run: python tools/build.py
+
+      - name: Smoke test the packaged app
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          app=dist/obs-now-playing/obs-now-playing.exe
+          "$app" --no-browser --no-tray &
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8765/api/players && break
+            sleep 0.5
+          done
+          echo
+          curl -fsS http://127.0.0.1:8765/overlay > /dev/null
+          curl -fsS http://127.0.0.1:8765/assets/overlay.js > /dev/null
+          "$app" --quit
+          sleep 2
+          ! curl -fsS http://127.0.0.1:8765/api/settings 2>/dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/obs-now-playing-v${{ needs.check-version.outputs.version }}-win64.zip
+          if-no-files-found: error
+
+  build-linux:
+    needs: check-version
+    # Oldest supported runner = oldest glibc the binaries require (2.35).
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"   # run appimagetool without FUSE
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Get appimagetool
+        run: |
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          echo "APPIMAGETOOL=$PWD/appimagetool" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: python tools/build.py --appimage
+
+      - name: Smoke test the packaged app (no D-Bus on the runner)
+        timeout-minutes: 3
+        run: |
+          app=dist/obs-now-playing/obs-now-playing
+          "$app" --no-browser --no-tray &
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8765/api/players && break
+            sleep 0.5
+          done
+          echo
+          curl -fsS http://127.0.0.1:8765/overlay > /dev/null
+          "$app" --quit
+          sleep 2
+          ! curl -fsS http://127.0.0.1:8765/api/settings 2>/dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/obs-now-playing-v${{ needs.check-version.outputs.version }}-linux-x86_64.tar.gz
+            dist/obs-now-playing-v${{ needs.check-version.outputs.version }}-linux-x86_64.AppImage
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [check-version, build-windows, build-linux]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: release
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Now Playing Overlay $GITHUB_REF_NAME" \
+            --generate-notes

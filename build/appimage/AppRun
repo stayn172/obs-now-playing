@@ -1,0 +1,5 @@
+#!/bin/sh
+# AppImage entry: run the bundled PyInstaller app. $APPIMAGE (set by the
+# runtime) is the stable path used for autostart and the OBS script.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/lib/obs-now-playing/obs-now-playing" "$@"

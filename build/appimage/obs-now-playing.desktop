@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Now Playing Overlay
+Comment=Local now-playing overlay for OBS
+Exec=obs-now-playing
+Icon=obs-now-playing
+Terminal=false
+Categories=AudioVideo;Utility;
