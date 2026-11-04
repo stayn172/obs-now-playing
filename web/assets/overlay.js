@@ -333,6 +333,20 @@
     applySettings();
   }
 
+  // If the app can't be reached (quit, crashed, restarting), hide the card
+  // instead of showing a frozen track whose timer keeps counting up. The
+  // overlay keeps retrying and comes back by itself when the app returns.
+  const OFFLINE_AFTER = 2; // consecutive failed requests, about 2 seconds
+  let failures = 0;
+  let offline = false;
+  function reachable() { failures = 0; offline = false; }
+  function unreachable() {
+    failures += 1;
+    if (offline || failures < OFFLINE_AFTER) return;
+    offline = true;
+    setNowPlaying({ now_playing: null, selected_name: payload ? payload.selected_name : "", server_time_ms: Date.now() });
+  }
+
   let pollTimer = 0;
   function startPolling() {
     if (pollTimer) return;
@@ -340,7 +354,10 @@
       try {
         onSettings(await getJSON("/api/settings"));
         if (!DEMO) setNowPlaying(await getJSON("/api/now-playing"));
-      } catch (_) { /* server restarting; keep trying */ }
+        reachable();
+      } catch (_) {
+        unreachable(); // keep trying
+      }
     };
     poll();
     pollTimer = setInterval(poll, 1000);
@@ -350,9 +367,9 @@
   function connect() {
     if (!window.EventSource) { startPolling(); return; }
     const es = new EventSource("/api/events");
-    es.addEventListener("settings", (e) => onSettings(JSON.parse(e.data)));
-    es.addEventListener("now-playing", (e) => { if (!DEMO) setNowPlaying(JSON.parse(e.data)); });
-    es.onopen = stopPolling;
+    es.addEventListener("settings", (e) => { reachable(); onSettings(JSON.parse(e.data)); });
+    es.addEventListener("now-playing", (e) => { reachable(); if (!DEMO) setNowPlaying(JSON.parse(e.data)); });
+    es.onopen = () => { reachable(); stopPolling(); };
     es.onerror = () => {
       startPolling(); // EventSource retries by itself; poll meanwhile
       if (es.readyState === EventSource.CLOSED) setTimeout(connect, 2000);
@@ -361,7 +378,7 @@
 
   function startDemo() {
     const poll = async () => {
-      try { setNowPlaying(await getJSON("/api/demo")); } catch (_) {}
+      try { setNowPlaying(await getJSON("/api/demo")); reachable(); } catch (_) { unreachable(); }
     };
     poll();
     setInterval(poll, 2000);
