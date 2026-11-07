@@ -50,7 +50,8 @@ def make_icon_image(size: int = 64):
     # beamed eighth notes
     w = (255, 255, 255, 255)
     stem = int(s * 0.06)
-    x1, x2 = int(s * 0.36), int(s * 0.70)
+    # Note spans x1-0.25s .. x2, so these values center it horizontally.
+    x1, x2 = int(s * 0.455), int(s * 0.795)
     y_top1, y_top2 = int(s * 0.24), int(s * 0.18)
     r = int(s * 0.11)
     cy1, cy2 = int(s * 0.70), int(s * 0.64)

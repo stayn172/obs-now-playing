@@ -128,6 +128,8 @@ async def test_overlay_assets_served(client):
                         ("/assets/fonts/inter-latin-wght.woff2", "font/woff2")]:
         r = await client.get(path)
         assert r.status == 200 and ctype in r.content_type, path
+        # Must revalidate, or an updated app keeps showing stale CSS/JS.
+        assert r.headers.get("Cache-Control") == "no-cache", path
 
 
 async def test_fonts_css_references_existing_files():

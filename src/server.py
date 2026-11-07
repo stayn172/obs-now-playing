@@ -389,6 +389,15 @@ def create_app(manager: PlayerManager, store: SettingsStore, notices: Notices | 
     assets = os.path.join(paths.web_dir(), "assets")
     if os.path.isdir(assets):
         r.add_static("/assets", assets, append_version=False)
+
+    async def revalidate_assets(request: web.Request, response: web.StreamResponse) -> None:
+        # Without this, browsers (and OBS) heuristically cache CSS/JS and keep
+        # showing the old version after an update. no-cache still allows a
+        # cheap 304 via ETag/Last-Modified.
+        if request.path.startswith("/assets/") and "Cache-Control" not in response.headers:
+            response.headers["Cache-Control"] = "no-cache"
+
+    app.on_response_prepare.append(revalidate_assets)
     return app
 
 
